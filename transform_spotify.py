@@ -38,3 +38,15 @@ print(df.head())
 
 # 4. Guardar una versión tabular en CSV (para revisar / cargar luego)
 df.to_csv("plays_raw.csv", index=False, encoding="utf-8")
+
+import sqlite3
+
+# Conectar a la misma BD que crea init_db.py
+conn = sqlite3.connect("spotify_etl.db")
+
+# Escribir el DataFrame en la tabla plays_raw
+df.to_sql("plays_raw", conn, if_exists="append", index=False)
+
+conn.close()
+
+print("Datos cargados en la tabla plays_raw de sqlite.")
