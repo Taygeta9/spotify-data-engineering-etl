@@ -7,3 +7,4 @@ __pycache__/
 # Local output / personal data
 recently_played.json
 plays_raw.csv
+spotify_etl.db
