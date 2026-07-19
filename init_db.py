@@ -5,8 +5,7 @@ cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS plays_raw (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    played_at TEXT,
+    played_at TEXT PRIMARY KEY,
     context_type TEXT,
     context_uri TEXT,
     track_id TEXT,
@@ -22,5 +21,3 @@ CREATE TABLE IF NOT EXISTS plays_raw (
 
 conn.commit()
 conn.close()
-
-print("Base de datos y tabla plays_raw creadas.")
