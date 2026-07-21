@@ -2,15 +2,20 @@ name: Daily Spotify ETL
 
 on:
   schedule:
-    # Corre cada día a las 05:00 UTC (ajusta la hora si quieres)
-    - cron: "0 5 * * *"
+    - cron: "0 6 * * *"
+  workflow_dispatch:
 
 jobs:
   run-etl:
     runs-on: ubuntu-latest
 
+    env:
+      client_id: ${{ secrets.client_id }}
+      client_secret: ${{ secrets.client_secret }}
+      redirect_uri: ${{ secrets.redirect_uri }}
+
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -21,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
       - name: Run daily ETL
         run: |
