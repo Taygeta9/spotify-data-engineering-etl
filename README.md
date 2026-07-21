@@ -1,57 +1,58 @@
 # Spotify Data Engineering ETL
 
-Pequeño proyecto de ingeniería de datos que construye un pipeline ETL con la API de Spotify para extraer mi historial de reproducciones recientes, transformarlo con Pandas y cargarlo en una base de datos SQLite para análisis.
+Pequeño proyecto de ingeniería de datos que construye un pipeline ETL con la API de Spotify para extraer mi historial de reproducciones recientes, transformarlo con Pandas, cargarlo en una base de datos SQLite y visualizar estadísticas básicas en un dashboard con Streamlit.
 
 ## Tecnologías
 
 - Python 3.13
-- Spotipy (cliente ligero para la Spotify Web API)
+- Spotipy / Spotify Web API
 - Pandas (transformación y análisis de datos)
 - SQLite (almacenamiento tabular)
-- Git / GitHub (control de versiones y portafolio)
+- Streamlit (dashboard web sencillo)
+- Git / GitHub + GitHub Actions (control de versiones y ejecución programada)
 
 ## Arquitectura del pipeline
 
-El proyecto implementa un flujo ETL básico:
+El proyecto implementa un flujo ETL básico sobre mi historial de “recently played”:
 
 1. **Extract (`extract_spotify.py`)**
-   - Autenticación con Spotify usando Authorization Code Flow (Spotipy + Web API).
+   - Autenticación con Spotify usando Authorization Code Flow.
    - Uso del scope `user-read-recently-played` para obtener las últimas reproducciones del usuario.
    - Persistencia de la respuesta cruda en `recently_played.json`.
 
-2. **Transform (`transform_spotify.py`)**
+2. **Transform + Load a reproducciones crudas (`transform_spotify.py` + `init_db.py`)**
    - Lectura del JSON crudo y normalización a una estructura tabular con Pandas.
-   - Extracción de campos clave:
+   - Extracción de campos clave como:
      - `played_at`, `context_type`, `context_uri`
      - `track_id`, `track_name`, `track_uri`
-     - `artist_id`, `artist_name`, `artist_uri`
-     - `artist_uri`, `album_name`, `duration_ms`
-   - Exportación a `plays_raw.csv` como representación intermedia.
+     - `artist_name`
+     - `album_name`, `duration_ms`
+   - Creación de la base SQLite `spotify_etl.db` y de la tabla `plays_raw` (desde `init_db.py`), y carga de los datos normalizados con `to_sql()` en `plays_raw`.
 
-3. **Load (`init_db.py` + `transform_spotify.py`)**
-   - Creación de una base de datos SQLite (`spotify_etl.db`).
-   - Definición de la tabla `plays_raw`:
+3. **Agregados diarios (`build_daily_stats.py`)**
+   - Lectura de `plays_raw` desde SQLite.
+   - Conversión de `played_at` a fecha (`played_date`).
+   - Cálculo de:
+     - `plays_count`: número de reproducciones por día.
+     - `minutes_total`: minutos totales escuchados por día (a partir de `duration_ms`).
+   - Escritura de los resultados en la tabla `user_daily_stats` dentro de `spotify_etl.db`.
 
-     ```sql
-     CREATE TABLE IF NOT EXISTS plays_raw (
-         id INTEGER PRIMARY KEY AUTOINCREMENT,
-         played_at TEXT,
-         context_type TEXT,
-         context_uri TEXT,
-         track_id TEXT,
-         track_name TEXT,
-         track_uri TEXT,
-         artist_id TEXT,
-         artist_name TEXT,
-         artist_uri TEXT,
-         album_name TEXT,
-         duration_ms INTEGER
-     );
-     ```
+4. **Orquestación (`run_daily_etl.py`)**
+   - Script maestro que ejecuta secuencialmente:
+     1. `init_db.py` (asegura esquema mínimo).
+     2. `extract_spotify.py` (actualiza `recently_played.json`).
+     3. `transform_spotify.py` (llena `plays_raw`).
+     4. `build_daily_stats.py` (actualiza `user_daily_stats`).
+   - Usa `sys.executable` para garantizar que todos los pasos corren dentro del mismo entorno virtual de Python.
 
-   - Inserción de los datos normalizados desde Pandas con `to_sql()` en la tabla `plays_raw`.
+5. **Dashboard (`dashboard.py`)**
+   - Lee la tabla `user_daily_stats` desde `spotify_etl.db`.
+   - Muestra:
+     - Tabla resumen de los últimos **7 días**.
+     - Tabla resumen de los últimos **30 días**.
+     - Gráficos de barras de `plays_count` y `minutes_total` por día (últimos 30 días) usando `st.bar_chart`.
 
-## Cómo ejecutar el proyecto
+## Setup local
 
 1. Clonar el repositorio:
 
@@ -70,49 +71,69 @@ El proyecto implementa un flujo ETL básico:
 3. Instalar dependencias:
 
    ```bash
-   pip install -r requirements.txt
+   python -m pip install --upgrade pip
+   python -m pip install -r requirements.txt
    ```
 
-4. Crear el archivo `.env` en la raíz del proyecto:
+4. Crear el archivo `.env` en la raíz del proyecto (no se versiona, solo local):
 
    ```env
-   client_id=TU_CLIENT_ID_DE_SPOTIFY
-   client_secret=TU_CLIENT_SECRET_DE_SPOTIFY
-   redirect_uri=http://127.0.0.1:8080/callback
+   SPOTIFY_CLIENT_ID=TU_CLIENT_ID_DE_SPOTIFY
+   SPOTIFY_CLIENT_SECRET=TU_CLIENT_SECRET_DE_SPOTIFY
+   SPOTIFY_REDIRECT_URI=http://127.0.0.1:8080/callback
    ```
 
-5. Ejecutar la fase Extract:
+   Para referencia, el repo incluye un `.env.example` con los nombres de variables esperadas.
+
+5. Ejecutar el ETL completo de forma manual:
 
    ```bash
-   python extract_spotify.py
+   python run_daily_etl.py
    ```
 
-   - Se abrirá el navegador para autorizar la app de Spotify.
-   - Se generará `recently_played.json` y un archivo `.cache` con el token.
+   Esto:
+   - Inicializa la base (`spotify_etl.db`) y las tablas mínimas.
+   - Descarga tus últimas reproducciones.
+   - Carga en `plays_raw`.
+   - Calcula y guarda agregados diarios en `user_daily_stats`.
 
-6. Inicializar la base de datos:
+6. Ejecutar el dashboard con Streamlit:
 
    ```bash
-   python init_db.py
+   streamlit run dashboard.py
    ```
 
-7. Ejecutar la fase Transform + Load:
+   Se abrirá un dashboard local donde se muestran las tablas de últimos 7 y 30 días y gráficos de barras básicos.
 
-   ```bash
-   python transform_spotify.py
-   ```
+## Ejecución programada con GitHub Actions (opcional)
 
-   - Se generará `plays_raw.csv`.
-   - Se insertarán los datos en la tabla `plays_raw` de `spotify_etl.db`.
+El proyecto puede ejecutarse automáticamente una vez al día usando GitHub Actions:
 
-## Próximos pasos / extensiones
+1. Definir secrets en GitHub (Settings → Secrets and variables → Actions):
 
-Algunas mejoras posibles para evolucionar este proyecto:
+   - `SPOTIFY_CLIENT_ID`
+   - `SPOTIFY_CLIENT_SECRET`
 
-- Añadir una tabla de agregados diarios (`user_daily_stats`) con:
-  - número de reproducciones por día,
-  - minutos escuchados,
-  - top artistas y canciones.
-- Orquestar el pipeline con Apache Airflow o cron para ejecutarlo de forma periódica.
-- Construir visualizaciones (por ejemplo, con Streamlit o dashboards) sobre la base de datos SQLite.
-- Añadir tests básicos y validación de calidad de datos.
+2. Crear un workflow (por ejemplo `.github/workflows/daily-etl.yml`) que:
+
+   - Use un disparador `schedule` (cron) para correr una vez al día.
+   - Configure las variables de entorno a partir de los secrets.
+   - Instale dependencias y ejecute `python run_daily_etl.py`.
+
+El código del proyecto está preparado para leer las credenciales desde variables de entorno, por lo que funciona tanto en local (con `.env` + `python-dotenv`) como en GitHub Actions (con `env` + `secrets`).
+
+## Alcance actual y posibles extensiones
+
+**Lo que hace hoy el proyecto:**
+
+- Extrae mi historial reciente de reproducciones desde la API de Spotify.
+- Normaliza y guarda todos los plays en una tabla `plays_raw` en SQLite.
+- Calcula estadísticas diarias básicas en `user_daily_stats`.
+- Expone un dashboard simple con Streamlit para explorar últimos días y tendencias.
+
+**Ideas futuras (no implementadas todavía):**
+
+- Añadir más métricas diarias (por ejemplo, top artistas/canciones por día).
+- Construir dashboards más completos (por ejemplo, con más filtros y vistas).
+- Revisar integraciones con otros almacenes (data lake, warehouse) o con herramientas de orquestación más avanzadas.
+
